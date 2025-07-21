@@ -1,10 +1,22 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
+import { jwtDecode } from 'jwt-decode';
 
 const HOURS = Array.from({ length: 17 }, (_, i) => 6 + i);
 
 function formatHour(h) {
   return `${h.toString().padStart(2, '0')}:00`;
+}
+
+function getCurrentUserId() {
+  const token = localStorage.getItem('token');
+  if (!token) return null;
+  try {
+    const decoded = jwtDecode(token);
+    return decoded?.id_user || decoded?.id || null;
+  } catch (err) {
+    return null;
+  }
 }
 
 export default function BookingSlots() {
@@ -20,6 +32,8 @@ export default function BookingSlots() {
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [pitches, setPitches] = useState([]);
+  const [slotPrices, setSlotPrices] = useState({}); // key: pitchId_date_start_end, value: price
+  const [totalPrice, setTotalPrice] = useState(0);
 
   // Lấy danh sách sân
   const fetchPitches = useCallback(async () => {
@@ -48,15 +62,19 @@ export default function BookingSlots() {
       setLoading(false);
     }
   }, [date]);
-
+  
   useEffect(() => {
     fetchPitches();
     fetchSlots();
   }, [fetchPitches, fetchSlots]);
 
   const getCellStatus = (pitchId, hour) => {
+    const currentUserId = getCurrentUserId();
+
     for (const slot of slots) {
       const id = slot.idPitches ?? slot.pitches?.id_pitches;
+      const userId = slot.idUser ?? slot.user?.id_user;
+
       if (
         id === pitchId &&
         typeof slot.startTime === 'string' &&
@@ -70,14 +88,34 @@ export default function BookingSlots() {
           startHour <= hour &&
           hour < endHour
         ) {
-          if (slot.status === 'BOOKED') return 'booked';
+          if (slot.status === 'BOOKED') {
+            if (userId === currentUserId) return 'mine';
+            return 'booked';
+          }
         }
       }
     }
     return 'available';
   };
 
-  const handleSlotClick = (pitch, hour) => {
+  const fetchSlotPrice = async (slot) => {
+    try {
+      const res = await axios.get('http://localhost:8099/api/timeslots/price', {
+        params: {
+          pitchId: slot.idPitches,
+          date: slot.date,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        },
+        withCredentials: true,
+      });
+      return res.data;
+    } catch (err) {
+      return 0;
+    }
+  };
+
+  const handleSlotClick = async (pitch, hour) => {
     const slot = {
       idPitches: pitch.id_pitches,
       pitchName: pitch.name,
@@ -86,6 +124,7 @@ export default function BookingSlots() {
       endTime: `${(hour + 1).toString().padStart(2, '0')}:00`,
       status: 'BOOKED'
     };
+    const key = `${slot.idPitches}_${slot.date}_${slot.startTime}_${slot.endTime}`;
     const exists = selectedSlots.some(
       s =>
         s.idPitches === slot.idPitches &&
@@ -103,8 +142,16 @@ export default function BookingSlots() {
             s.endTime === slot.endTime
           )
       ));
+      setSlotPrices(prev => {
+        const newPrices = { ...prev };
+        delete newPrices[key];
+        return newPrices;
+      });
     } else {
       setSelectedSlots([...selectedSlots, slot]);
+      // fetch price and update slotPrices
+      const price = await fetchSlotPrice(slot);
+      setSlotPrices(prev => ({ ...prev, [key]: price }));
     }
     setMessage('');
   };
@@ -157,8 +204,32 @@ export default function BookingSlots() {
     }
   };
 
+  useEffect(() => {
+    // Cập nhật tổng tiền mỗi khi slotPrices hoặc selectedSlots thay đổi
+    let sum = 0;
+    for (const slot of selectedSlots) {
+      const key = `${slot.idPitches}_${slot.date}_${slot.startTime}_${slot.endTime}`;
+      sum += Number(slotPrices[key] || 0);
+    }
+    setTotalPrice(sum);
+  }, [slotPrices, selectedSlots]);
+
   return (
     <div className="booking-container" style={{ padding: 24, background: '#e0f7fa', minHeight: '100vh' }}>
+      <div style={{ position: 'absolute', top: 24, right: 32, zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+          <div style={{ width: 24, height: 16, background: '#64b5f6', border: '1px solid #ccc', marginRight: 8 }} />
+          <span>Ô của tôi đã đặt</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+          <div style={{ width: 24, height: 16, background: '#e57373', border: '1px solid #ccc', marginRight: 8 }} />
+          <span>Ô đã có người đặt</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ width: 24, height: 16, background: '#81c784', border: '1px solid #ccc', marginRight: 8 }} />
+          <span>Ô đang chọn</span>
+        </div>
+      </div>
       <h2>Đặt sân thể thao</h2>
       <div style={{ marginBottom: 16 }}>
         <label>
@@ -209,7 +280,9 @@ export default function BookingSlots() {
                     <td
                       key={h}
                       style={{
-                        background: status === 'booked'
+                        background: status === 'mine'
+                          ? '#64b5f6'  // màu xanh dương
+                          : status === 'booked'
                           ? '#e57373'
                           : isSelected
                           ? '#81c784'
@@ -256,6 +329,15 @@ export default function BookingSlots() {
           </button>
         </div>
       )}
+      {/* Hiển thị tổng tiền ở góc phải dưới */}
+      <div style={{ position: 'fixed', right: 32, bottom: 32, zIndex: 20, background: '#fff', border: '1px solid #ccc', borderRadius: 8, padding: '16px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minWidth: 200, textAlign: 'center', fontWeight: 'bold', fontSize: 18 }}>
+        {selectedSlots.length > 0 && (
+          <>
+            <span>Tổng tiền cần trả:&nbsp;</span>
+            <span style={{ color: '#00796b', fontSize: 22 }}>{totalPrice.toLocaleString()} đ</span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
