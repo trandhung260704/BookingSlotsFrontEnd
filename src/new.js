@@ -1,43 +1,69 @@
 const axios = require('axios');
+
 let data = JSON.stringify({
-  "idPitches": 1,
-  "date": "2025-07-25",
-  "startTime": "20:00",
-  "endTime": "21:00",
-  "status": "BOOKED"
+  idPitches: 1,
+  date: "2025-07-26",
+  startTime: "15:00",
+  endTime: "16:00",
+  status: "BOOKED"
 });
 
 let config = {
   method: 'post',
   maxBodyLength: Infinity,
-  url: 'http://localhost:8099/api/booking',
+  url: 'http://localhost:8099/api/orders',
   headers: { 
     'Content-Type': 'application/json', 
-    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJpZCI6MiwiZW1haWwiOiJiQGdtYWlsLmNvbSIsInJvbGUiOiJDVVNUT01FUiIsInN1YiI6IjIiLCJpYXQiOjE3NTMwNzkzNDQsImV4cCI6MTc1MzE2NTc0NH0.54_U7sFree0G40TB2qK9F3vOj0NdFQRNbJARgcLtcgk', 
+    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImJAZ21haWwuY29tIiwicm9sZSI6IkNVU1RPTUVSIiwiaWQiOjIsInN1YiI6IjIiLCJpYXQiOjE3NTMxNzU5NTIsImV4cCI6MTc1MzI2MjM1Mn0.B7mmk1H8ntA_B77NhwGfuf9fP-rffAtK2Y2cgiV964E', 
     'Cookie': 'Cookie_6=value'
   },
-  data : data
+  data: data
 };
 
 let config2 = {
-    method: 'post',
-    maxBodyLength: Infinity,
-    url: 'http://localhost:8099/api/booking',
-    headers: { 
-      'Content-Type': 'application/json', 
-      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJpZCI6MSwiZW1haWwiOiJhQGdtYWlsLmNvbSIsInJvbGUiOiJDVVNUT01FUiIsInN1YiI6IjEiLCJpYXQiOjE3NTMwNzkzNjMsImV4cCI6MTc1MzE2NTc2M30.ezyfdBHSXvDmbhK7bpG_ZCvat2g2qGKjIJ-tavPz4c4', 
-      'Cookie': 'Cookie_6=value'
-    },
-    data : data
-  };
+  method: 'post',
+  maxBodyLength: Infinity,
+  url: 'http://localhost:8099/api/orders',
+  headers: { 
+    'Content-Type': 'application/json', 
+    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImFAZ21haWwuY29tIiwicm9sZSI6IkNVU1RPTUVSIiwiaWQiOjEsInN1YiI6IjEiLCJpYXQiOjE3NTMxNzYwMTUsImV4cCI6MTc1MzI2MjQxNX0.hd4CFA5R84yj0cUsmIZjHJnjSudo52HD2se0OVE0--M', 
+    'Cookie': 'Cookie_6=value'
+  },
+  data: data
+};
 
-const test = async () =>{
-    const req1 = axios.request(config);
-    const req2 = axios.request(config2);
-    const res = await Promise.all([req1, req2]);
-    console.log(res[0].data);
-    console.log("=========================================");
-    console.log(res[1].data);
-}
+const test = async () => {
+  try {
+      const req1 = axios.request(config);
+      const req2 = axios.request(config2);
+
+      const [res1, res2] = await Promise.allSettled([req1, req2]);
+
+      if (res1.status === 'fulfilled') {
+          console.log(res1.value.data);
+      } else {
+          console.error(res1.reason);
+      }
+
+      console.log("=========================================");
+
+      if (res2.status === 'fulfilled') {
+          console.log(res2.value.data);
+      } else {
+          console.error(res2.reason);
+      }
+  } catch (err) {
+      console.error("Lỗi không mong muốn:", err);
+  }
+};
+
+// const test = async () =>{
+//   const req1 = axios.request(config);
+//   const req2 = axios.request(config2);
+//   const res = await Promise.all([req1, req2]);
+//   console.log(res[0].data);
+//   console.log("=========================================");
+//   console.log(res[1].data);
+// }
 
 test();

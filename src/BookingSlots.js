@@ -35,7 +35,6 @@ export default function BookingSlots() {
   const [slotPrices, setSlotPrices] = useState({}); // key: pitchId_date_start_end, value: price
   const [totalPrice, setTotalPrice] = useState(0);
 
-  // Lấy danh sách sân
   const fetchPitches = useCallback(async () => {
     try {
       const res = await axios.get('http://localhost:8099/api/pitches');
@@ -70,24 +69,20 @@ export default function BookingSlots() {
 
   const getCellStatus = (pitchId, hour) => {
     const currentUserId = getCurrentUserId();
-
+  
     for (const slot of slots) {
-      const id = slot.idPitches ?? slot.pitches?.id_pitches;
-      const userId = slot.idUser ?? slot.user?.id_user;
-
+      const slotPitchId = slot.id_pitches?.id_pitches ?? slot.id_pitches;
+      const userId = slot.id_user?.id_user ?? slot.id_user;
+  
       if (
-        id === pitchId &&
-        typeof slot.startTime === 'string' &&
-        typeof slot.endTime === 'string'
+        slotPitchId === pitchId &&
+        typeof slot.start_time === 'string' &&
+        typeof slot.end_time === 'string'
       ) {
-        const startHour = parseInt(slot.startTime.split(':')[0], 10);
-        const endHour = parseInt(slot.endTime.split(':')[0], 10);
-        if (
-          !isNaN(startHour) &&
-          !isNaN(endHour) &&
-          startHour <= hour &&
-          hour < endHour
-        ) {
+        const startHour = parseInt(slot.start_time.split(':')[0], 10);
+        const endHour = parseInt(slot.end_time.split(':')[0], 10);
+  
+        if (!isNaN(startHour) && !isNaN(endHour) && startHour <= hour && hour < endHour) {
           if (slot.status === 'BOOKED') {
             if (userId === currentUserId) return 'mine';
             return 'booked';
@@ -95,8 +90,10 @@ export default function BookingSlots() {
         }
       }
     }
+  
     return 'available';
   };
+  
 
   const fetchSlotPrice = async (slot) => {
     try {
@@ -149,63 +146,76 @@ export default function BookingSlots() {
       });
     } else {
       setSelectedSlots([...selectedSlots, slot]);
-      // fetch price and update slotPrices
       const price = await fetchSlotPrice(slot);
       setSlotPrices(prev => ({ ...prev, [key]: price }));
     }
     setMessage('');
   };
 
-  // Đặt sân
-  const handleConfirmBooking = async (e) => {
-    e?.preventDefault && e.preventDefault();
-    if (selectedSlots.length === 0) {
-      setMessage('Bạn chưa chọn khung giờ nào!');
+const handleConfirmBooking = async (e) => {
+  e?.preventDefault && e.preventDefault();
+  if (selectedSlots.length === 0) {
+    setMessage('Bạn chưa chọn khung giờ nào!');
+    return;
+  }
+  setBookingLoading(true);
+  setMessage('');
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setMessage('Bạn chưa đăng nhập!');
+      setBookingLoading(false);
       return;
     }
-    setBookingLoading(true);
-    setMessage('');
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setMessage('Bạn chưa đăng nhập!');
-        setBookingLoading(false);
-        return;
-      }
-      for (const slot of selectedSlots) {
-        const payload = {
-          idPitches: slot.idPitches,
-          date: slot.date,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          status: 'BOOKED'
-        };
-        await axios.post('http://localhost:8099/api/booking', payload, {
-          headers: {
-            Authorization: 'Bearer ' + token,
-          },
-          withCredentials: true,
-        });
-      }
-      setMessage('✅ Đặt sân thành công!');
-      setSelectedSlots([]);
-      fetchSlots();
-      setTimeout(() => setMessage(''), 3000);
-    } catch (error) {
-      if (error.response?.status === 401) {
-        setMessage('❌ Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.');
-      } else if (error.response?.data) {
-        setMessage('❌ ' + (error.response.data.message || 'Lỗi khi đặt sân.'));
-      } else {
-        setMessage('❌ Lỗi khi đặt sân. Có thể khung giờ đã có người đặt hoặc bạn chưa đăng nhập.');
-      }
-    } finally {
+
+    const decoded = jwtDecode(token);
+    const idUser = decoded?.id || decoded?.id_user;
+
+    if (!idUser) {
+      setMessage('Token không hợp lệ!');
       setBookingLoading(false);
+      return;
     }
-  };
+
+    for (const slot of selectedSlots) {
+      const payload = {
+        idPitches: slot.idPitches,
+        date: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        status: 'BOOKED'
+      };
+
+      // eslint-disable-next-line no-unused-vars
+      const res = await axios.post('http://localhost:8099/api/orders', payload, {
+        headers: {
+          Authorization: 'Bearer ' + token,
+        },
+        withCredentials: true,
+      });
+    }
+
+    setMessage('✅ Đặt sân thành công!');
+    setSelectedSlots([]);
+    fetchSlots();
+    setTimeout(() => setMessage(''), 3000);
+  } catch (error) {
+    if (error.response?.status === 401) {
+      setMessage('❌ Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.');
+    } else if (error.response?.status === 409) {
+      setMessage('❌ Khung giờ bạn chọn đã có người đặt. Vui lòng chọn khung giờ khác!');
+    } else if (error.response?.data) {
+      setMessage('❌ ' + (error.response.data.message || 'Lỗi khi đặt sân.'));
+    } else {
+      setMessage('❌ Lỗi không xác định khi đặt sân.');
+    }
+  } finally {
+    setBookingLoading(false);
+  }
+};
+
 
   useEffect(() => {
-    // Cập nhật tổng tiền mỗi khi slotPrices hoặc selectedSlots thay đổi
     let sum = 0;
     for (const slot of selectedSlots) {
       const key = `${slot.idPitches}_${slot.date}_${slot.startTime}_${slot.endTime}`;
@@ -276,24 +286,25 @@ export default function BookingSlots() {
                       s.startTime === `${h.toString().padStart(2, '0')}:00` &&
                       s.endTime === `${(h + 1).toString().padStart(2, '0')}:00`
                   );
+                  const getBgColor = () => {
+                    if (status === 'mine') return '#64b5f6';     
+                    if (isSelected) return '#81c784';            
+                    if (status === 'booked') return '#e57373';   
+                  };
+                  
                   return (
                     <td
                       key={h}
                       style={{
-                        background: status === 'mine'
-                          ? '#64b5f6'  // màu xanh dương
-                          : status === 'booked'
-                          ? '#e57373'
-                          : isSelected
-                          ? '#81c784'
-                          : '#fff',
+                        background: getBgColor(),
                         border: '1px solid #ccc',
                         height: 32,
                         minWidth: 60,
                         cursor: status === 'available' ? 'pointer' : 'not-allowed'
                       }}
                       onClick={() => status === 'available' && handleSlotClick(pitch, h)}
-                    />
+                    >
+                    </td>                  
                   );
                 })}
               </tr>
@@ -329,7 +340,6 @@ export default function BookingSlots() {
           </button>
         </div>
       )}
-      {/* Hiển thị tổng tiền ở góc phải dưới */}
       <div style={{ position: 'fixed', right: 32, bottom: 32, zIndex: 20, background: '#fff', border: '1px solid #ccc', borderRadius: 8, padding: '16px 32px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minWidth: 200, textAlign: 'center', fontWeight: 'bold', fontSize: 18 }}>
         {selectedSlots.length > 0 && (
           <>
